@@ -48,6 +48,7 @@ void on_data_recv(const esp_now_recv_info_t *info, const uint8_t *data, int len)
     if (resposta.concluida){
         if (resposta.esp == 1) st_tarefas1 = TAREFA_CONCLUIDA;
         if (resposta.esp == 2) st_tarefas2 = TAREFA_CONCLUIDA;
+        
     }
 
 }
@@ -76,7 +77,7 @@ void task_mandar_tarefa_1(void *params) {
 }
 void task_mandar_tarefa_2(void *params) {
     int timeout = 0;
-    srand(rand());
+    srand(time(NULL));
     for(;;) {
         
         if (st_tarefas2 == TAREFA_CONCLUIDA) {
