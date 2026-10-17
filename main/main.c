@@ -6,6 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "time.h"
+#include "display_spi_config.h"
 
 #define TAG "Sender"
 typedef struct __attribute__((packed)){
@@ -22,8 +23,13 @@ typedef struct __attribute__((packed)){
 
 typedef struct {
     uint8_t task_mac_address[6];
-    char* nome_task;
+    char nome_task[10];
 } dados_task_t;
+
+typedef struct{
+    dados_tarefa_t dados_tarefa_display;
+    dados_task_t dados_task_display;
+} dados_display_t;
 
 typedef enum {
     TAREFA_ENVIADA,
@@ -32,8 +38,20 @@ typedef enum {
 
 int cont_tarefas = 0;
 QueueHandle_t fila_macs_concluidos;
+SemaphoreHandle_t semaforo_display;
 uint8_t lista_macs[100][6];
 
+
+
+void exibir_ultima_task(dados_display_t dados){      
+        xSemaphoreTake(semaforo_display, portMAX_DELAY);
+        clear_screen(0x0000);
+        draw_text(10, 10, "Task: ", 0x07E0, 2);
+        draw_text(40, 10, dados.dados_task_display.nome_task, 0xFFFF, 2);
+        desenhar_tela();
+        xSemaphoreGive(semaforo_display);
+        
+}
 
 
 void task_ger_tarefa(void *params) {
@@ -59,6 +77,11 @@ void task_ger_tarefa(void *params) {
             esp_now_send(dados_task_interno.task_mac_address, (uint8_t*)&tarefa, sizeof(tarefa));
             st_tarefa = TAREFA_ENVIADA;
             ESP_LOGI("TESTE", "TAREFA ENVIADA");
+            dados_display_t dados_display = {
+                .dados_tarefa_display = tarefa,
+                .dados_task_display = dados_task_interno
+            };
+            exibir_ultima_task(dados_display);
 
         } else {
             xQueuePeek(fila_macs_concluidos, &mac_fila, 500);
@@ -94,11 +117,12 @@ void on_data_recv(const esp_now_recv_info_t *info, const uint8_t *data, int len)
         case 1:
             if(esp_now_is_peer_exist(resposta.esp_mac_address)) return;
             cont_tarefas++;
-            char str_buffer[100];
-            snprintf(str_buffer, sizeof(str_buffer), "Task_%d", cont_tarefas);
-            dados_task_t dados_task = {.nome_task = str_buffer};
+            
+            dados_task_t dados_task;
+            snprintf(dados_task.nome_task, sizeof(dados_task.nome_task), dados_task.nome_task, "Task_%d", cont_tarefas);
+            
             memcpy(dados_task.task_mac_address, resposta.esp_mac_address, sizeof(dados_task.task_mac_address));
-            xTaskCreate(task_ger_tarefa, str_buffer, 4096, (void*)&dados_task, 2, NULL);
+            xTaskCreate(task_ger_tarefa, dados_task.nome_task, 4096, (void*)&dados_task, 2, NULL);
             memcpy(resposta.esp_mac_address, lista_macs[cont_tarefas], sizeof(resposta.esp_mac_address));
             break;
         case 2:
@@ -133,5 +157,11 @@ void app_main(void)
     esp_now_register_recv_cb(on_data_recv);
 
     fila_macs_concluidos = xQueueCreate(10, sizeof(uint8_t[6]));
+    
+    semaforo_display = xSemaphoreCreateBinary();
+    xSemaphoreGive(semaforo_display);
+    config_spi();
+    clear_screen(0x0000);
+
 
 }
