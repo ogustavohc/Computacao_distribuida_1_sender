@@ -23,7 +23,7 @@ typedef struct __attribute__((packed)){
 
 typedef struct {
     uint8_t task_mac_address[6];
-    char nome_task[10];
+    char nome_task[25];
 } dados_task_t;
 
 typedef struct{
@@ -43,11 +43,33 @@ uint8_t lista_macs[100][6];
 
 
 
-void exibir_ultima_task(dados_display_t dados){      
+
+void exibir_ultima_task(dados_display_t dados){
+        char texto_mac[20];
+        char texto_n_piscadas[10];
+        char texto_cor[10];
+        char texto_velocidade[10];
+        snprintf(texto_mac, sizeof(texto_mac),
+         "%02X:%02X:%02X:%02X:%02X:%02X",
+         (unsigned)dados.dados_task_display.task_mac_address[0], (unsigned)dados.dados_task_display.task_mac_address[1], (unsigned)dados.dados_task_display.task_mac_address[2],
+         (unsigned)dados.dados_task_display.task_mac_address[3], (unsigned)dados.dados_task_display.task_mac_address[4], (unsigned)dados.dados_task_display.task_mac_address[5]);
+        snprintf(texto_n_piscadas, sizeof(texto_n_piscadas), "%u", dados.dados_tarefa_display.n_piscadas);
+        snprintf(texto_cor, sizeof(texto_cor), "%u", dados.dados_tarefa_display.cor_led);
+        snprintf(texto_velocidade, sizeof(texto_velocidade), "%u", dados.dados_tarefa_display.velocidade_piscadas);      
         xSemaphoreTake(semaforo_display, portMAX_DELAY);
         clear_screen(0x0000);
         draw_text(10, 10, "Task: ", 0x07E0, 2);
-        draw_text(40, 10, dados.dados_task_display.nome_task, 0xFFFF, 2);
+        draw_text(80, 10, dados.dados_task_display.nome_task, 0xFFFF, 2);
+        draw_text(10, 35, "Para: ", 0x07E0, 1);
+        draw_text(80, 35, texto_mac, 0xFFFF, 1);
+        draw_text(10, 45, "-----------------", 0xFFFF, 2);
+        draw_text(10, 65, "Piscadas: ", 0x07E0, 2);
+        draw_text(170, 65, texto_n_piscadas, 0xFFFF, 2);
+        draw_text(10, 85, "Cor: ", 0x07E0, 2);
+        draw_text(170, 85, texto_cor, 0xFFFF, 2);
+        draw_text(10, 105, "Velocidade: ", 0x07E0, 2);
+        draw_text(170, 105, texto_velocidade, 0xFFFF, 2);
+
         desenhar_tela();
         xSemaphoreGive(semaforo_display);
         
@@ -84,9 +106,9 @@ void task_ger_tarefa(void *params) {
             exibir_ultima_task(dados_display);
 
         } else {
-            xQueuePeek(fila_macs_concluidos, &mac_fila, 500);
+            xQueuePeek(fila_macs_concluidos, &mac_fila, portMAX_DELAY);
             ESP_LOGI("TESTE", "OLHEI A FILA");
-            if (memcmp(mac_fila, dados_task_interno.task_mac_address, sizeof(mac_fila))){
+            if (memcmp(mac_fila, dados_task_interno.task_mac_address, sizeof(mac_fila)) == 0){
                 ESP_LOGI("TESTE", "item removido da queue");
                 xQueueReceive(fila_macs_concluidos, &mac_fila, 5000);
                 st_tarefa = TAREFA_CONCLUIDA;
@@ -119,7 +141,7 @@ void on_data_recv(const esp_now_recv_info_t *info, const uint8_t *data, int len)
             cont_tarefas++;
             
             dados_task_t dados_task;
-            snprintf(dados_task.nome_task, sizeof(dados_task.nome_task), dados_task.nome_task, "Task_%d", cont_tarefas);
+            snprintf(dados_task.nome_task, sizeof(dados_task.nome_task),"Task_%d", cont_tarefas);
             
             memcpy(dados_task.task_mac_address, resposta.esp_mac_address, sizeof(dados_task.task_mac_address));
             xTaskCreate(task_ger_tarefa, dados_task.nome_task, 4096, (void*)&dados_task, 2, NULL);
@@ -128,7 +150,7 @@ void on_data_recv(const esp_now_recv_info_t *info, const uint8_t *data, int len)
         case 2:
             ESP_LOGI("TESTE", "Informações recebidas");
             uint8_t mac[6];
-            memcpy(resposta.esp_mac_address, mac, sizeof(resposta.esp_mac_address));
+            memcpy(mac, resposta.esp_mac_address, sizeof(resposta.esp_mac_address));
             xQueueSend(fila_macs_concluidos, &mac, 10000);
             break;
 
