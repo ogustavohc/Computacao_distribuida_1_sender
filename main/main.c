@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include "esp_wifi.h"
 #include "esp_now.h"
 #include "nvs_flash.h"
@@ -39,10 +40,15 @@ typedef enum {
 int cont_tarefas = 0;
 QueueHandle_t fila_macs_concluidos;
 SemaphoreHandle_t semaforo_display;
+
 uint8_t lista_macs[100][6];
+dados_task_t dados_task;
 
 
-
+void tela_espera(){
+    draw_text(10, 10, "Aguardando conexões...", 0x07E0, 2);
+    desenhar_tela();
+}
 
 void exibir_ultima_task(dados_display_t dados){
         char texto_mac[20];
@@ -76,9 +82,12 @@ void exibir_ultima_task(dados_display_t dados){
 }
 
 
+
+
 void task_ger_tarefa(void *params) {
     state_machine_tarefas st_tarefa = TAREFA_CONCLUIDA;
     dados_task_t dados_task_interno = *(dados_task_t*)params;
+    free(params);
     uint8_t mac_fila[6]; 
     ESP_LOGI(dados_task_interno.nome_task, "Task criada para %d", dados_task_interno.task_mac_address);
     esp_now_peer_info_t peer = {};
@@ -121,6 +130,23 @@ void task_ger_tarefa(void *params) {
 
     }
 }
+void criar_task(dados_resposta_t resposta){
+    cont_tarefas++;   
+    dados_task_t *args = malloc(sizeof(*args));
+    if (args == NULL)  {
+        ESP_LOGE("Task Criação Task", "Falha ao alocar daddos na memória para task");
+        return;
+    }
+
+    snprintf(args->nome_task, sizeof(args->nome_task),"Task_%d", cont_tarefas);
+    memcpy(args->task_mac_address, resposta.esp_mac_address, sizeof(args->task_mac_address));
+    BaseType_t resultado = xTaskCreate(task_ger_tarefa, args->nome_task, 4096, (void*)args, 2, NULL);
+    if (resultado != pdPASS){
+        free(args);
+        ESP_LOGE("Task Criação Task", "Falha ao criar task");
+    }
+    memcpy(resposta.esp_mac_address, lista_macs[cont_tarefas], sizeof(resposta.esp_mac_address));
+}
 
 void on_data_sent(const esp_now_send_info_t *tx_info , esp_now_send_status_t status) {
     if (status == ESP_NOW_SEND_SUCCESS) {
@@ -137,15 +163,11 @@ void on_data_recv(const esp_now_recv_info_t *info, const uint8_t *data, int len)
     memcpy(&resposta, data, sizeof(dados_resposta_t));
     switch(resposta.tipo_pacote){
         case 1:
+
             if(esp_now_is_peer_exist(resposta.esp_mac_address)) return;
-            cont_tarefas++;
+            criar_task(resposta);
+
             
-            dados_task_t dados_task;
-            snprintf(dados_task.nome_task, sizeof(dados_task.nome_task),"Task_%d", cont_tarefas);
-            
-            memcpy(dados_task.task_mac_address, resposta.esp_mac_address, sizeof(dados_task.task_mac_address));
-            xTaskCreate(task_ger_tarefa, dados_task.nome_task, 4096, (void*)&dados_task, 2, NULL);
-            memcpy(resposta.esp_mac_address, lista_macs[cont_tarefas], sizeof(resposta.esp_mac_address));
             break;
         case 2:
             ESP_LOGI("TESTE", "Informações recebidas");
@@ -181,9 +203,12 @@ void app_main(void)
     fila_macs_concluidos = xQueueCreate(10, sizeof(uint8_t[6]));
     
     semaforo_display = xSemaphoreCreateBinary();
+
     xSemaphoreGive(semaforo_display);
+
     config_spi();
     clear_screen(0x0000);
+    tela_espera();
 
 
 }
